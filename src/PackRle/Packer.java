@@ -6,9 +6,11 @@ import java.util.ArrayDeque;
 
 public class Packer {
 
-    public int pack(String inputName, String outputName) throws IOException {
+    private static final char endOfFile = '\uFFFF';
+
+    public static void pack(String inputName, String outputName) throws IOException {
         try (FileInputStream inputStream = new FileInputStream(inputName)) {
-                return pack(inputStream, outputName);
+                pack(inputStream, outputName);
         }
     }
 
@@ -38,20 +40,21 @@ public class Packer {
      *
      * RandomAccessFile используется для побитовой записи в файл.
      */
-    public int pack(InputStream in, String outputName) throws IOException {
+    public static void pack(InputStream in, String outputName) throws IOException {
         try (InputStreamReader reader = new InputStreamReader(in)) {
-            try (RandomAccessFile writer = new RandomAccessFile(outputName, "rw")) {
+            try (RandomAccessFile outputFile = new RandomAccessFile(outputName, "rw")) {
+
+
+            ArrayDeque<Character> tempBuffer = new ArrayDeque<>();
 
                 if (in.available() == 1) {
-                    char c = (char) reader.read();
-                    writer.write((byte) 0);
-                    writer.write(c);
+                    tempBuffer.addLast((char) reader.read());
+                    writePackSequence(1, tempBuffer, outputFile);
                 }
 
                 char nextChar = (char) reader.read();
-                ArrayDeque<Character> tempBuffer = new ArrayDeque<>();
 
-                while (nextChar != '\uFFFF') {
+                while (nextChar != endOfFile) {
                     if (tempBuffer.isEmpty()) {
                         tempBuffer.addLast(nextChar);
                         nextChar = (char) reader.read();
@@ -66,66 +69,73 @@ public class Packer {
                     }
 
                     if (charsAmt == 1) {
-                        //129: 128 - max length of a sequence of duplicate chars and 1 the nextChar
+                        //129: 128 is the max length of a sequence of different chars and 1 is the nextChar
                         while (nextChar != tempBuffer.peekLast() && tempBuffer.size() < 129) {
-                            if (nextChar == '\uFFFF') break;
+                            if (nextChar == endOfFile) break;
 
                             tempBuffer.addLast(nextChar);
                             nextChar = (char) reader.read();
                         }
                         //last char in tempBuffer is not from this sequence
-                        charsAmt = tempBuffer.size() - ((nextChar == '\uFFFF')? 0 : 1);
+                        charsAmt = tempBuffer.size() - ((nextChar == endOfFile)? 0 : 1);
                     }
 
-                    //write to file
-                    byte previousByte = (byte) (((tempBuffer.size() == 1)? -1 : 1) * (charsAmt - 1));
-                    writer.write(previousByte);
-
-                    int charsAmtToOut = (tempBuffer.size() == 1)? 1 : charsAmt;
-
-                    for (int i = 1; i <= charsAmtToOut; i++) {
-                        byte[] charInBytes = String.valueOf(tempBuffer.pollFirst()).getBytes();
-                        writer.write(charInBytes);
-                    }
+                    writePackSequence(charsAmt, tempBuffer, outputFile);
                 }
             }
         }
-        return -1;
+    }
+
+    /**
+     * Записывает в outputFile упакованную методом rle последовательность
+     *
+     * @param charsAmt - колличество символов в последовательности из InputFile
+     * @param buffer - передается ссылка на дек (!)
+     */
+    private static void writePackSequence(int charsAmt, ArrayDeque<Character> buffer,
+                                          RandomAccessFile outputFile) throws IOException {
+            byte previousByte = (byte) (((buffer.size() == 1)? -1 : 1) * (charsAmt - 1));
+            outputFile.write(previousByte);
+
+            int charsAmtToOut = (buffer.size() == 1)? 1 : charsAmt;
+
+            for (int i = 1; i <= charsAmtToOut; i++) {
+                byte[] charInBytes = String.valueOf(buffer.pollFirst()).getBytes();
+                outputFile.write(charInBytes);
+            }
     }
 
 
-    public int unpack(String inputName, String outputName) throws IOException {
-        try (FileOutputStream outputStream = new FileOutputStream(outputName)) {
-            return unpack(inputName, outputStream);
+    public static void main(String[] args) {
+        try {
+            pack("files/in1.txt", "files/packed.txt");
+        } catch (IOException e) {
+            System.err.println(e.getMessage());
         }
     }
 
 
-    public int unpack (String inputName, OutputStream out) throws IOException {
-        try (RandomAccessFile reader = new RandomAccessFile(inputName, "rw")) {
+    public static void unpack(String inputName, String outputName) throws IOException {
+        try (FileOutputStream outputStream = new FileOutputStream(outputName)) {
+            unpack(inputName, outputStream);
+        }
+    }
+
+
+    private static void unpack (String inputName, OutputStream out) throws IOException {
+        try (RandomAccessFile inputFile = new RandomAccessFile(inputName, "rw")) {
             try (OutputStreamWriter writer = new OutputStreamWriter(out)) {
 
                 while (true) {
                     byte previousByte;
                     try {
-                        previousByte = reader.readByte();
-                    } catch (IOException e) {
-                        return -1;
+                        previousByte = inputFile.readByte();
+                    } catch (EOFException e) {
+                        return;
                     }
 
                     if (previousByte < 0) {
-                        byte firstCharByte = reader.readByte();
-
-                        int byteAmtInChar = (firstCharByte >= 0) ? 1 : (firstCharByte < -32) ? 2 : 3;
-                        byte[] charInBytes = new byte[byteAmtInChar];
-
-                        charInBytes[0] = firstCharByte;
-                        for (int i = 1; i < byteAmtInChar; i++) {
-                            charInBytes[i] = reader.readByte();
-                        }
-
-                        String charToOut = new String(charInBytes);
-
+                        String charToOut = readOneChar(inputFile);
                         int charAmt = -1 * previousByte + 1;
                         for (int i = 1; i <= charAmt; i++) {
                             writer.write(charToOut);
@@ -134,17 +144,7 @@ public class Packer {
                     else {
                         int charAmt = previousByte + 1;
                         for (int i = 1; i <= charAmt; i++) {
-                            byte firstCharByte = reader.readByte();
-
-                            int byteAmt = (firstCharByte >= 0) ? 1 : (firstCharByte < -32) ? 2 : 3;
-                            byte[] charInBytes = new byte[byteAmt];
-
-                            charInBytes[0] = firstCharByte;
-                            for (int j = 1; j < byteAmt; j++) {
-                                charInBytes[j] = reader.readByte();
-                            }
-
-                            String charToOut = new String(charInBytes);
+                            String charToOut = readOneChar(inputFile);
                             writer.write(charToOut);
                         }
                     }
@@ -152,5 +152,25 @@ public class Packer {
 
             }
         }
+    }
+
+
+    /**
+     * Читает 1 2 или 3 байта из входного файла, и преобразует их в один символ
+     *
+     * @param inputFile - RandomAccessFile, файл, с которого читается 1 символ (1|2|3 байта)
+     * @return Возвращается String, всегда из одного символа
+     */
+    private static String readOneChar(RandomAccessFile inputFile) throws IOException {
+        byte firstCharByte = inputFile.readByte();
+        int byteAmtInChar = (firstCharByte >= 0) ? 1 : (firstCharByte < -32) ? 2 : 3;
+
+        byte[] charInBytes = new byte[byteAmtInChar];
+        charInBytes[0] = firstCharByte;
+        for (int i = 1; i < byteAmtInChar; i++) {
+            charInBytes[i] = inputFile.readByte();
+        }
+
+        return new String(charInBytes);
     }
 }

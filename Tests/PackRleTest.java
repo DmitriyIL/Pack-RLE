@@ -1,7 +1,10 @@
-import PackRle.Packer;
 import org.apache.commons.io.FileUtils;
 import org.junit.Test;
+
+import static PackRle.Packer.pack;
+import static PackRle.Packer.unpack;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.*;
 
@@ -23,37 +26,36 @@ public class PackRleTest {
      * затем сами символ(-ы) последовательности
      */
     @Test
-    public void Pack(){
-        Packer packer = new Packer();
+    public void packTest(){
         try {
-            packer.pack("files/in1.txt", "files/packed.txt");
+            pack("files/in1.txt", "files/packed.txt");
             String expectedContent = toChar(-3) + "a" + toChar(4) + "bcdef";
             assertFileContent("files/packed.txt", expectedContent);
             FileUtils.write(new File("files/packed.txt"), "");
 
-            packer.pack("files/in2.txt", "files/packed.txt");
+            pack("files/in2.txt", "files/packed.txt");
             expectedContent = toChar(0) + "a" + toChar(-2) + "b" + toChar(0) + "a";
             assertFileContent("files/packed.txt", expectedContent);
             FileUtils.write(new File("files/packed.txt"), "");
 
-            packer.pack("files/in3.txt", "files/packed.txt");
+            pack("files/in3.txt", "files/packed.txt");
             expectedContent = toChar(-128) + "a" + toChar(0) + "a";
             assertFileContent("files/packed.txt", expectedContent);
             FileUtils.write(new File("files/packed.txt"), "");
 
             StringBuilder line = new StringBuilder("");
             for (int i = 1; i <= 64; i++) line.append("ab");
-            packer.pack("files/in4.txt", "files/packed.txt");
+            pack("files/in4.txt", "files/packed.txt");
             expectedContent = toChar(127) + line.toString() + toChar(1) + "ab";
             assertFileContent("files/packed.txt", expectedContent);
             FileUtils.write(new File("files/packed.txt"), "");
 
-            packer.pack("files/in5.txt", "files/packed.txt");
+            pack("files/in5.txt", "files/packed.txt");
             expectedContent = toChar(0) + "a";
             assertFileContent("files/packed.txt", expectedContent);
             FileUtils.write(new File("files/packed.txt"), "");
 
-            packer.pack("files/in6.txt", "files/packed.txt");
+            pack("files/in6.txt", "files/packed.txt");
             expectedContent = toChar(-4) + toCharArray("ф") + toChar(5) + toCharArray("гdшлfн");
             assertFileContent("files/packed.txt", expectedContent);
             FileUtils.write(new File("files/packed.txt"), "");
@@ -63,22 +65,15 @@ public class PackRleTest {
     }
 
     @Test
-    public void Unpack(){
-        Packer packer = new Packer();
+    public void unpackTest(){
         try {
             for (int i = 1; i <= 6; i++) {
                 String inputFileName = "files/in" + i + ".txt";
 
-                packer.pack(inputFileName, "files/packed.txt");
-                packer.unpack("files/packed.txt", "files/unpacked.txt");
+                pack(inputFileName, "files/packed.txt");
+                unpack("files/packed.txt", "files/unpacked.txt");
 
-                RandomAccessFile inputFile = new RandomAccessFile(inputFileName, "rw");
-                RandomAccessFile unpackedFile = new RandomAccessFile("files/unpacked.txt", "rw");
-
-                String expectedContent = inputFile.readLine();
-                String actualContent = unpackedFile.readLine();
-
-                assertEquals(expectedContent, actualContent);
+                assertTrue(FileUtils.contentEquals(new File(inputFileName), new File("files/unpacked.txt")));
 
                 FileUtils.write(new File("files/packed.txt"), "");
                 FileUtils.write(new File("files/unpacked.txt"), "");
