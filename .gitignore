@@ -1,4 +1,4 @@
 # IDEA project
-*.iml
-out/
+/out
 src/META-INF
+
